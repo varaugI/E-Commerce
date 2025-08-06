@@ -15,6 +15,19 @@ const validateRegistration = (req, res, next) => {
     next();
 };
 
+
+
+const validatePassword = (password) => {
+    const schema = Joi.string()
+        .min(8)
+        .pattern(new RegExp('^(?=.*[a-z])(?=.*[A-z])(?=.*[0-9])(?=.*[!@#\$%\^&\*])'))
+        .required()
+        .messages({
+            'string.pattern.base': 'Password must contain uppercase, lowercase, number and special character'
+        });
+    return schema.validate(password);
+};
+
 // Register
 exports.registerUser = async (req, res) => {
     const { name, email, password } = req.body;

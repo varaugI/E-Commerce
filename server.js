@@ -11,7 +11,6 @@ const xss = require('xss-clean');
 
 const connectDB = require('./config/db');
 const logRequest = require('./middleware/logRequest');
-const errorHandler = require('./middleware/errorHandler');
 const authRoutes = require('./routes/authRoutes');
 const productRoutes = require('./routes/productRoutes');
 const orderRoutes = require('./routes/orderRoutes');
@@ -58,8 +57,6 @@ app.get('/api/health', async (req, res) => {
         uptime: process.uptime(),
     });
 });
-
-app.use(errorHandler);
 
 
 const PORT = process.env.PORT || 5000;

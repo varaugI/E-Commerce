@@ -66,12 +66,29 @@ const productSchema = new mongoose.Schema({
     saleEndDate: { type: Date },
     questions: [questionSchema]
 
-}, { timestamps: true });
+}, {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
+});
 
 productSchema.index({ name: 'text', description: 'text' }); // Text search
 productSchema.index({ category: 1, brand: 1 }); // Filtering
 productSchema.index({ price: 1 }); // Price range queries
 productSchema.index({ rating: -1 }); // Top rated products
 productSchema.index({ category: 1, price: 1, rating: -1 }); // Filter + sort
-productSchema.index({ countInStock: 1 }); 
+productSchema.index({ countInStock: 1 });
+productSchema.index({ category: 1, brand: 1, price: 1 }); // Category + brand + price filtering
+productSchema.index({ rating: -1, numReviews: -1 }); // Popular products
+productSchema.index({ createdAt: -1 }); // Recent products
+productSchema.index({ viewCount: -1, updatedAt: -1 }); // Trending products
+productSchema.index({ name: 'text', description: 'text', brand: 'text' }); // Full-text search
+
+// Virtual for current price (considering sales)
+productSchema.virtual('currentPrice').get(function () {
+    if (this.salePrice && this.saleEndDate && this.saleEndDate > new Date()) {
+        return this.salePrice;
+    }
+    return this.price;
+});
 module.exports = mongoose.model('Product', productSchema);

@@ -19,7 +19,9 @@ orderEvents.on('order:created', async (order) => {
 });
 
 orderEvents.on('order:paid', async (order) => {
-  /* can be used better, need work... can be informed. */
+    // Send payment confirmation
+    // Update inventory
+    // Trigger fulfillment process
 });
 
 module.exports = orderEvents;
