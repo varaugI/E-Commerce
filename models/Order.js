@@ -54,7 +54,22 @@ const orderSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
-    canceledAt: Date
+    canceledAt: Date,
+    customStatus: {
+        type: String,
+        default: 'Pending'
+    },
+    statusHistory: [
+        {
+            status: String,
+            changedAt: { type: Date, default: Date.now },
+            changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+        }
+    ]
 }, { timestamps: true });
+orderSchema.index({ user: 1, createdAt: -1 });
+orderSchema.index({ isPaid: 1, isDelivered: 1 });
+orderSchema.index({ user: 1, createdAt: -1, isPaid: 1 });
+orderSchema.index({ isPaid: 1, isDelivered: 1, isCanceled: 1 });
 
 module.exports = mongoose.model('Order', orderSchema);

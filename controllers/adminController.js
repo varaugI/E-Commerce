@@ -2,32 +2,50 @@ const Order = require('../models/Order');
 const User = require('../models/User');
 const Product = require('../models/Product');
 
+const { Parser } = require('json2csv');
 
 // @desc    Get basic admin dashboard statistics
 // @route   GET /api/admin/dashboard
 // @access  Private/Admin
 exports.getAdminDashboardStats = async (req, res) => {
     try {
-        const totalOrders = await Order.countDocuments();
-        const totalSales = await Order.aggregate([
-            { $match: { isPaid: true } },
-            { $group: { _id: null, total: { $sum: "$totalPrice" } } }
+        const [stats] = await Order.aggregate([
+            {
+                $facet: {
+                    totalOrders: [{ $count: "count" }],
+                    totalSales: [
+                        { $match: { isPaid: true } },
+                        { $group: { _id: null, total: { $sum: "$totalPrice" } } }
+                    ],
+                    deliveredOrders: [
+                        { $match: { isDelivered: true } },
+                        { $count: "count" }
+                    ],
+                    canceledOrders: [
+                        { $match: { isCanceled: true } },
+                        { $count: "count" }
+                    ]
+                }
+            }
         ]);
 
-        const totalUsers = await User.countDocuments();
-        const totalProducts = await Product.countDocuments();
+        const [userStats, productStats] = await Promise.all([
+            User.countDocuments(),
+            Product.countDocuments()
+        ]);
 
         res.json({
-            totalOrders,
-            totalSales: totalSales[0]?.total || 0,
-            totalUsers,
-            totalProducts
+            totalOrders: stats.totalOrders[0]?.count || 0,
+            totalSales: stats.totalSales[0]?.total || 0,
+            totalUsers: userStats,
+            totalProducts: productStats,
+            deliveredOrders: stats.deliveredOrders[0]?.count || 0,
+            canceledOrders: stats.canceledOrders[0]?.count || 0
         });
     } catch (err) {
         res.status(500).json({ message: 'Failed to load dashboard stats' });
     }
 };
-
 
 // @desc    Get detailed admin stats including order statuses
 // @route   GET /api/admin/stats
@@ -103,7 +121,6 @@ exports.getTopSellingProducts = async (req, res) => {
     }
 };
 
-
 // @desc    Get monthly sales trend (last 12 months)
 // @route   GET /api/admin/sales-trend
 // @access  Private/Admin
@@ -137,7 +154,6 @@ exports.getMonthlySalesTrend = async (req, res) => {
     }
 };
 
-
 // @desc    Get number of new users in the current month
 // @route   GET /api/admin/new-users
 // @access  Private/Admin
@@ -158,19 +174,76 @@ exports.getNewUsersThisMonth = async (req, res) => {
 
 
 
-// @desc    Get recent admin logs
-// @route   GET /api/admin/logs
+// @desc    Update order status (custom statuses)
+// @route   PUT /api/admin/orders/:id/status
 // @access  Private/Admin
-exports.getAdminLogs = async (req, res) => {
+exports.updateOrderStatus = async (req, res) => {
     try {
-        const logs = await AdminLog.find()
-            .populate('admin', 'name email')
-            .sort({ createdAt: -1 })
-            .limit(100);
-        res.json(logs);
+        const { status } = req.body;
+        if (!status) {
+            return res.status(400).json({ message: 'Status is required' });
+        }
+
+        const order = await Order.findById(req.params.id);
+        if (!order) return res.status(404).json({ message: 'Order not found' });
+
+        order.customStatus = status; // Add `customStatus` field in Order schema if not exists
+        await order.save();
+
+        res.json({ message: `Order status updated to ${status}`, order });
     } catch (err) {
-        res.status(500).json({ message: 'Failed to fetch admin logs' });
+        res.status(500).json({ message: 'Failed to update order status' });
+    }
+};
+
+// @desc    Bulk update product stock
+// @route   PUT /api/admin/products/stock
+// @access  Private/Admin
+exports.bulkUpdateProductStock = async (req, res) => {
+    try {
+        const { products } = req.body; // [{ productId, countInStock }, ...]
+        if (!products || !Array.isArray(products)) {
+            return res.status(400).json({ message: 'Products array is required' });
+        }
+
+        const bulkOps = products.map(item => ({
+            updateOne: {
+                filter: { _id: item.productId },
+                update: { $set: { countInStock: item.countInStock } }
+            }
+        }));
+
+        await Product.bulkWrite(bulkOps);
+        res.json({ message: 'Stock updated successfully' });
+    } catch (err) {
+        res.status(500).json({ message: 'Failed to update product stock' });
     }
 };
 
 
+// @desc    Export all orders as CSV
+// @route   GET /api/admin/orders/export
+// @access  Private/Admin
+exports.exportOrdersCSV = async (req, res) => {
+    try {
+        const orders = await Order.find().populate('user', 'name email');
+        const fields = [
+            { label: 'Order ID', value: '_id' },
+            { label: 'User', value: row => row.user?.name || 'N/A' },
+            { label: 'Email', value: row => row.user?.email || 'N/A' },
+            { label: 'Total Price', value: 'totalPrice' },
+            { label: 'Is Paid', value: 'isPaid' },
+            { label: 'Is Delivered', value: 'isDelivered' },
+            { label: 'Created At', value: 'createdAt' }
+        ];
+
+        const json2csv = new Parser({ fields });
+        const csv = json2csv.parse(orders);
+
+        res.header('Content-Type', 'text/csv');
+        res.attachment('orders.csv');
+        res.send(csv);
+    } catch (err) {
+        res.status(500).json({ message: 'Failed to export orders' });
+    }
+};

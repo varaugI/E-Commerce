@@ -1,6 +1,19 @@
 const User = require('../models/User');
 const generateToken = require('../utils/generateToken');
-const createUserLog = require('../utils/createUserLog');
+
+const Joi = require('joi');
+
+const validateRegistration = (req, res, next) => {
+    const schema = Joi.object({
+        name: Joi.string().min(2).max(50).required(),
+        email: Joi.string().email().required(),
+        password: Joi.string().min(6).required()
+    });
+
+    const { error } = schema.validate(req.body);
+    if (error) return res.status(400).json({ message: error.details[0].message });
+    next();
+};
 
 // Register
 exports.registerUser = async (req, res) => {
@@ -10,16 +23,20 @@ exports.registerUser = async (req, res) => {
         return res.status(400).json({ message: 'All fields are required' });
 
     try {
+
         const userExists = await User.findOne({ email });
         if (userExists)
             return res.status(400).json({ message: 'User already exists' });
+        const passwordSchema = Joi.string()
+            .min(8)
+            .pattern(new RegExp('^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#\$%\^&\*])'))
+            .required()
+            .messages({
+                'string.pattern.base': 'Password must contain uppercase, lowercase, number and special character'
+            });
 
         const user = await User.create({ name, email, password });
-        await createUserLog({
-            userId: user._id,
-            action: 'registerUser',
-            details: { name, email }
-        });
+
 
         res.status(201).json({
             ...user.toJSON(),
@@ -34,7 +51,8 @@ exports.registerUser = async (req, res) => {
 // Login
 exports.loginUser = async (req, res) => {
     const { email, password } = req.body;
-
+    const { error } = validatePassword(password);
+    if (error) return res.status(400).json({ message: error.details[0].message });
     if (!email || !password)
         return res.status(400).json({ message: 'Email and password are required' });
 
@@ -44,12 +62,6 @@ exports.loginUser = async (req, res) => {
 
         if (!user || !isMatch)
             return res.status(401).json({ message: 'Invalid email or password' });
-
-        await createUserLog({
-            userId: user._id,
-            action: 'loginUser',
-            details: { email }
-        });
 
         res.json({
             ...user.toJSON(),
